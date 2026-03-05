@@ -91,18 +91,33 @@ if not selected_names:
 # ─── DATA FUNCTIONS ────────────────────────────────────────────
 
 @st.cache_data(ttl=300)
-def get_market_data(gecko_ids):
-    url = "https://api.coingecko.com/api/v3/coins/markets"
-    params = {
-        "vs_currency": "usd", "ids": ",".join(gecko_ids),
-        "order": "market_cap_desc",
-        "price_change_percentage": "1h,24h,7d", "sparkline": False
-    }
-    try:
-        r = requests.get(url, params=params, timeout=12)
-        return r.json() if r.status_code == 200 else []
-    except:
-        return []
+def get_market_data(coin_list):
+    """Binance se prices fetch karo — no rate limit!"""
+    results = []
+    for name, (gecko_id, symbol, ticker) in coin_list.items():
+        try:
+            # Current price from Binance ticker
+            r = requests.get(
+                "https://api.binance.com/api/v3/ticker/24hr",
+                params={"symbol": symbol}, timeout=8
+            )
+            if r.status_code != 200:
+                continue
+            d = r.json()
+            results.append({
+                "id":           gecko_id,
+                "name":         name.split(" (")[0],
+                "symbol":       ticker.lower(),
+                "current_price":        float(d["lastPrice"]),
+                "price_change_percentage_24h":  float(d["priceChangePercent"]),
+                "price_change_percentage_7d_in_currency": 0,
+                "market_cap":   0,
+                "total_volume": float(d["quoteVolume"]),
+            })
+            time.sleep(0.1)
+        except:
+            continue
+    return results
 
 @st.cache_data(ttl=180)
 def get_binance_klines(symbol, interval="1h", limit=168):
@@ -330,11 +345,11 @@ def get_signal(rsi, macd, msig, price, ema20, ema50, chg24, sentiment_score):
     else:             return "⚪ HOLD",          "hold", score, reasons
 
 # ─── FETCH BASE DATA ───────────────────────────────────────────
-gecko_ids = [ALL_COINS[n][0] for n in selected_names]
 interval  = DAYS_TO_INTERVAL.get(days, "1h")
+selected_coins_dict = {n: ALL_COINS[n] for n in selected_names}
 
 with st.spinner("📡 Data fetch ho raha hai..."):
-    market_data = get_market_data(gecko_ids)
+    market_data = get_market_data(selected_coins_dict)
     fear_greed  = get_fear_greed()
     trending    = get_trending()
 
